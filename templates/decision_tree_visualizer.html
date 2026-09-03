@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Decision Tree — Gini Visualizer</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg:        #0d0f14;
+    --bg2:       #13161e;
+    --bg3:       #1a1e2a;
+    --surface:   #1f2333;
+    --border:    #2e3347;
+    --border2:   #3d4460;
+    --text:      #e2e6f3;
+    --muted:     #7a82a0;
+    --faint:     #3d4460;
+    --accent:    #5e72eb;
+    --accent2:   #8b9cf7;
+    --pure-node: #22c55e;
+    --impure:    #f97316;
+    --mid:       #eab308;
+    --edge:      #334155;
+    --node-w:    210px;
+    --node-h:    130px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 24px 32px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .logo {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+  }
+  h1 {
+    font-size: 18px; font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+  .subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .stats-bar {
+    display: flex; gap: 20px; flex-wrap: wrap;
+  }
+  .stat {
+    display: flex; flex-direction: column; align-items: flex-end;
+  }
+  .stat-val { font-size: 20px; font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .stat-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    padding: 12px 32px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .toolbar label { font-size: 13px; color: var(--muted); }
+  select, input[type=range] {
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    color: var(--text);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    outline: none;
+  }
+  select:hover, select:focus { border-color: var(--accent); }
+  input[type=range] { padding: 0; width: 120px; accent-color: var(--accent); }
+  .pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 20px;
+    border: 1px solid var(--border2);
+    font-size: 12px; cursor: pointer;
+    transition: all .15s;
+    user-select: none;
+  }
+  .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .pill:hover:not(.active) { border-color: var(--accent2); color: var(--accent2); }
+  .sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+  .legend { display: flex; gap: 12px; margin-left: auto; flex-wrap: wrap; }
+  .leg-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .leg-dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* ── Canvas area ── */
+  #canvas-wrap {
+    width: 100%;
+    overflow: auto;
+    position: relative;
+  }
+  #tree-svg {
+    display: block;
+  }
+
+  /* ── Node cards (foreignObject) ── */
+  .node-card {
+    width: var(--node-w);
+    height: var(--node-h);
+    background: var(--surface);
+    border: 1.5px solid var(--border2);
+    border-radius: 12px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color .2s, transform .15s, box-shadow .2s;
+    position: relative;
+    overflow: hidden;
+  }
+  .node-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    border-radius: 12px 12px 0 0;
+    background: var(--node-accent, var(--border2));
+    transition: opacity .2s;
+  }
+  .node-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+  .node-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(94,114,235,.3); }
+  .node-card.leaf { --node-accent: var(--pure-node); border-color: rgba(34,197,94,.35); }
+  .node-card.gini-high { --node-accent: var(--impure); }
+  .node-card.gini-mid { --node-accent: var(--mid); }
+  .node-card.gini-low:not(.leaf) { --node-accent: var(--accent2); }
+
+  .node-id {
+    font-size: 10px; font-family: 'JetBrains Mono'; color: var(--muted);
+    margin-bottom: 5px; display: flex; justify-content: space-between;
+  }
+  .node-type {
+    font-size: 10px; padding: 1px 6px; border-radius: 4px;
+    font-weight: 600; letter-spacing: .4px;
+  }
+  .node-type.leaf { background: rgba(34,197,94,.15); color: var(--pure-node); }
+  .node-type.internal { background: rgba(94,114,235,.15); color: var(--accent2); }
+
+  .split-label {
+    font-size: 12px; font-weight: 600; color: var(--text);
+    margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; }
+  .metric { display: flex; flex-direction: column; }
+  .metric-val {
+    font-family: 'JetBrains Mono'; font-size: 13px; font-weight: 600;
+    color: var(--metric-color, var(--text));
+  }
+  .metric-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .gini-bar-wrap {
+    margin-top: 8px; height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden;
+  }
+  .gini-bar { height: 100%; border-radius: 2px; transition: width .4s; }
+
+  /* ── Pi² pills ── */
+  .pi2-row {
+    display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px;
+  }
+  .pi2-pill {
+    font-size: 9px; font-family: 'JetBrains Mono';
+    padding: 1px 5px; border-radius: 3px;
+    background: rgba(255,255,255,.06); color: var(--muted);
+    display: flex; align-items: center; gap: 3px;
+  }
+  .pi2-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  /* ── Detail panel ── */
+  #detail-panel {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 340px;
+    background: var(--bg2); border-left: 1px solid var(--border);
+    padding: 24px; overflow-y: auto;
+    transform: translateX(100%);
+    transition: transform .25s cubic-bezier(.16,1,.3,1);
+    z-index: 100;
+  }
+  #detail-panel.open { transform: translateX(0); }
+  .panel-close {
+    position: absolute; top: 16px; right: 16px;
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--muted); padding: 4px 8px; cursor: pointer; font-size: 18px; line-height: 1;
+  }
+  .panel-close:hover { color: var(--text); }
+  .panel-section { margin-bottom: 24px; }
+  .panel-section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 10px; }
+  .panel-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .panel-key { font-size: 13px; color: var(--muted); }
+  .panel-val { font-family: 'JetBrains Mono'; font-size: 14px; font-weight: 500; }
+  .formula-box {
+    background: var(--bg3); border-radius: 8px; padding: 12px;
+    font-family: 'JetBrains Mono'; font-size: 12px; color: var(--accent2);
+    line-height: 1.6;
+  }
+  .pi2-table { width: 100%; font-size: 13px; border-collapse: collapse; }
+  .pi2-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .pi2-table td:last-child { text-align: right; font-family: 'JetBrains Mono'; }
+  .class-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+  .class-bar-bg { flex: 1; height: 6px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+  .class-bar-fill { height: 100%; border-radius: 3px; }
+
+  /* ── Code panel ── */
+  #code-panel {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--bg2); border-top: 1px solid var(--border);
+    transform: translateY(100%);
+    transition: transform .25s cubic-bezier(.16,1,.3,1);
+    z-index: 90; max-height: 50vh; overflow-y: auto;
+  }
+  #code-panel.open { transform: translateY(0); }
+  .code-header {
+    padding: 12px 20px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--bg2); z-index: 1;
+  }
+  .code-header h2 { font-size: 14px; font-weight: 500; }
+  .code-actions { display: flex; gap: 8px; }
+  .code-btn {
+    background: var(--bg3); border: 1px solid var(--border2);
+    color: var(--text); padding: 5px 12px; border-radius: 6px;
+    font-size: 12px; cursor: pointer; font-family: 'DM Sans';
+    transition: background .15s;
+  }
+  .code-btn:hover { background: var(--surface); }
+  pre {
+    padding: 20px; font-family: 'JetBrains Mono'; font-size: 13px;
+    color: #c9d1d9; line-height: 1.7; overflow-x: auto;
+  }
+  .kw { color: #ff7b72; }
+  .fn { color: #d2a8ff; }
+  .str { color: #a5d6ff; }
+  .cm { color: #6e7681; font-style: italic; }
+  .num { color: #79c0ff; }
+  .var { color: #ffa657; }
+
+  /* ── Zoom controls ── */
+  .zoom-controls {
+    position: fixed; bottom: 24px; left: 24px;
+    display: flex; gap: 6px; z-index: 80;
+  }
+  .zoom-btn {
+    width: 34px; height: 34px; border-radius: 8px;
+    background: var(--surface); border: 1px solid var(--border2);
+    color: var(--text); font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background .15s;
+  }
+  .zoom-btn:hover { background: var(--bg3); }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; top: 20px; right: 20px; z-index: 200;
+    background: var(--surface); border: 1px solid var(--border2);
+    padding: 10px 16px; border-radius: 8px; font-size: 13px;
+    opacity: 0; transform: translateY(-8px);
+    transition: all .2s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; transform: translateY(0); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌿</div>
+    <div>
+      <h1>Decision Tree — Gini Visualizer</h1>
+      <div class="subtitle">Interactive node explorer with Pᵢ² purity breakdown</div>
+    </div>
+  </div>
+  <div class="stats-bar" id="stats-bar">
+    <div class="stat"><span class="stat-val" id="s-nodes">—</span><span class="stat-lbl">Nodes</span></div>
+    <div class="stat"><span class="stat-val" id="s-depth">—</span><span class="stat-lbl">Depth</span></div>
+    <div class="stat"><span class="stat-val" id="s-leaves">—</span><span class="stat-lbl">Leaves</span></div>
+    <div class="stat"><span class="stat-val" id="s-samples">—</span><span class="stat-lbl">Samples</span></div>
+  </div>
+</header>
+
+<div class="toolbar">
+  <label for="mode-sel">Colour by</label>
+  <select id="mode-sel">
+    <option value="gini">Gini impurity</option>
+    <option value="samples">Sample count</option>
+    <option value="depth">Tree depth</option>
+  </select>
+  <div class="sep"></div>
+  <label>Show</label>
+  <div class="pill active" id="pill-pi2" onclick="togglePill(this,'pi2')">Pᵢ² pills</div>
+  <div class="pill active" id="pill-bar" onclick="togglePill(this,'bar')">Gini bar</div>
+  <div class="sep"></div>
+  <label for="zoom-range" style="white-space:nowrap">Zoom <span id="zoom-val">100%</span></label>
+  <input type="range" id="zoom-range" min="30" max="180" value="100" oninput="applyZoom(this.value)">
+  <div class="sep"></div>
+  <button class="code-btn" onclick="toggleCode()" style="margin-left:4px">⌨ View Code</button>
+  <div class="legend">
+    <div class="leg-item"><div class="leg-dot" style="background:#f97316"></div>High Gini</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#eab308"></div>Mid Gini</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#8b9cf7"></div>Low Gini</div>
+    <div class="leg-item"><div class="leg-dot" style="background:#22c55e"></div>Pure Leaf</div>
+  </div>
+</div>
+
+<div id="canvas-wrap">
+  <svg id="tree-svg"></svg>
+</div>
+
+<!-- ── Detail Side Panel ── -->
+<div id="detail-panel">
+  <button class="panel-close" onclick="closePanel()">✕</button>
+  <div id="panel-content"></div>
+</div>
+
+<!-- ── Code Bottom Panel ── -->
+<div id="code-panel">
+  <div class="code-header">
+    <h2>How to use this visualizer</h2>
+    <div class="code-actions">
+      <button class="code-btn" onclick="copyCode()">Copy</button>
+      <button class="code-btn" onclick="toggleCode()">✕ Close</button>
+    </div>
+  </div>
+  <pre id="code-block"></pre>
+</div>
+
+<!-- ── Zoom controls ── -->
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="applyZoom(Math.max(30,currentZoom-10))">−</button>
+  <button class="zoom-btn" onclick="applyZoom(Math.min(180,currentZoom+10))">+</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  DATA LAYER — replace/extend this section with your real clf
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * parseClf(clfData)
+ *
+ * Accepts the output of `extract_tree_data(clf)` (see "View Code").
+ * Returns an array of node objects ready for rendering.
+ *
+ * clfData shape:
+ * {
+ *   n_nodes, feature_names, class_names,
+ *   feature:       int[]   (feature index per node, -2 = leaf)
+ *   threshold:     float[]
+ *   impurity:      float[]  (Gini per node)
+ *   n_node_samples: int[]
+ *   value:         [[[count,…]]]  (per-node class counts)
+ *   children_left:  int[]
+ *   children_right: int[]
+ * }
+ */
+function parseClf(d) {
+  const nodes = [];
+  function walk(id, depth) {
+    const isLeaf = d.children_left[id] === -1;
+    const total  = d.n_node_samples[id];
+    const counts = d.value[id][0];
+    const pi2    = counts.map(c => { const p = c/total; return { p, pi2: +(p*p).toFixed(4), c }; });
+    const gini   = +d.impurity[id].toFixed(4);
+    const sumPi2 = +pi2.reduce((s,x)=>s+x.pi2,0).toFixed(4);
+
+    nodes.push({
+      id, depth, isLeaf, gini, total, pi2, sumPi2,
+      feature: isLeaf ? null : (d.feature_names ? d.feature_names[d.feature[id]] : 'f'+d.feature[id]),
+      threshold: isLeaf ? null : +d.threshold[id].toFixed(4),
+      left:  isLeaf ? null : d.children_left[id],
+      right: isLeaf ? null : d.children_right[id],
+      classNames: d.class_names || counts.map((_,i)=>'class '+i)
+    });
+
+    if (!isLeaf) {
+      walk(d.children_left[id],  depth+1);
+      walk(d.children_right[id], depth+1);
+    }
+  }
+  walk(0, 0);
+  return nodes;
+}
+
+// ── Default demo data (drug200 decision tree, 11 nodes) ─────────
+const DEMO_DATA = {
+  n_nodes: 11,
+  feature_names: ['Age','Sex','BP','Cholesterol','Na_to_K'],
+  class_names: ['DrugA','DrugB','DrugC','DrugX','DrugY'],
+  feature:         [4, 2, 3, -2, -2, -2, 1, -2, -2, -2, -2],
+  threshold:       [14.8278, 1.5, 0.5, -2,-2,-2,-2,-2,-2,-2,-2],
+  impurity:        [0.6795,0.6559,0.3244,0.4991,0.0,0.0,0.0,0.4911,0.0,0.0,0.0],
+  n_node_samples:  [160,84,54,23,12,11,31,30,17,13,76],
+  value: [
+    [[ 18,14,13,44,71 ]],
+    [[ 18,14,13,39,0  ]],
+    [[ 0, 0, 0,44,10  ]],
+    [[ 18,14,13,0, 0  ]],
+    [[ 12,0, 0, 0, 0  ]],
+    [[ 0, 0, 13,0, 0  ]],
+    [[ 0, 0, 0,31,0   ]],
+    [[ 6, 14,0, 0, 10 ]],
+    [[ 0, 14,0, 0, 3  ]],
+    [[ 6, 0, 0, 0, 7  ]],
+    [[ 0, 0, 0, 0, 76 ]]
+  ],
+  children_left:  [1,3,6,-1,-1,-1,-1,8,-1,-1,-1],
+  children_right: [10,2,7,-1,-1,-1,-1,9,-1,-1,-1]
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  LAYOUT ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+const NODE_W   = 210;
+const NODE_H   = 130;
+const H_GAP    = 32;
+const V_GAP    = 60;
+
+function buildLayout(nodes) {
+  // Index by id
+  const byId = {};
+  nodes.forEach(n => byId[n.id] = n);
+
+  // Compute subtree widths
+  function subtreeWidth(id) {
+    const n = byId[id];
+    if (n.isLeaf) return NODE_W;
+    const lw = subtreeWidth(n.left);
+    const rw = subtreeWidth(n.right);
+    return lw + rw + H_GAP;
+  }
+
+  // Assign x,y positions
+  function assignPos(id, x, depth) {
+    const n = byId[id];
+    n.y = depth * (NODE_H + V_GAP) + 40;
+    if (n.isLeaf) { n.x = x; return; }
+    const lw = subtreeWidth(n.left);
+    const rw = subtreeWidth(n.right);
+    n.x = x + lw/2 - NODE_W/2;
+    assignPos(n.left,  x,           depth+1);
+    assignPos(n.right, x + lw + H_GAP, depth+1);
+  }
+
+  const totalW = subtreeWidth(0);
+  assignPos(0, 40, 0);
+
+  // Total SVG dimensions
+  let maxX = 0, maxY = 0;
+  nodes.forEach(n => { maxX = Math.max(maxX, n.x + NODE_W); maxY = Math.max(maxY, n.y + NODE_H); });
+  return { nodes: byId, svgW: maxX + 40, svgH: maxY + 40 };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COLOUR HELPERS
+// ═══════════════════════════════════════════════════════════════
+
+function giniColor(g) {
+  if (g === 0)    return '#22c55e';
+  if (g < 0.25)  return '#86efac';
+  if (g < 0.4)   return '#8b9cf7';
+  if (g < 0.55)  return '#eab308';
+  return '#f97316';
+}
+function classColor(i) {
+  const palette = ['#5e72eb','#22c55e','#f97316','#ec4899','#eab308','#06b6d4','#a855f7'];
+  return palette[i % palette.length];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════════════════════════════
+
+let NODES = [], LAYOUT = {};
+let showPi2 = true, showBar = true, colorMode = 'gini';
+let currentZoom = 100, selectedId = null;
+
+const NS = 'http://www.w3.org/2000/svg';
+const FO_NS = 'http://www.w3.org/1999/xhtml';
+
+function render(data) {
+  NODES = parseClf(data);
+  LAYOUT = buildLayout(NODES);
+
+  const svg = document.getElementById('tree-svg');
+  svg.innerHTML = '';
+  svg.setAttribute('width',  LAYOUT.svgW);
+  svg.setAttribute('height', LAYOUT.svgH);
+  svg.setAttribute('viewBox', `0 0 ${LAYOUT.svgW} ${LAYOUT.svgH}`);
+
+  // ── Edges ──────────────────────────────────────────────────
+  const edgeGroup = document.createElementNS(NS,'g');
+  edgeGroup.setAttribute('id','edges');
+  NODES.forEach(n => {
+    if (n.isLeaf) return;
+    const lc = LAYOUT.nodes[n.left];
+    const rc = LAYOUT.nodes[n.right];
+    [lc, rc].forEach((child, idx) => {
+      const x1 = n.x + NODE_W/2;
+      const y1 = n.y + NODE_H;
+      const x2 = child.x + NODE_W/2;
+      const y2 = child.y;
+      const mx = (x1+x2)/2;
+      const my = (y1+y2)/2;
+
+      const path = document.createElementNS(NS,'path');
+      path.setAttribute('d', `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`);
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke','#2e3347');
+      path.setAttribute('stroke-width','1.5');
+      path.setAttribute('class','edge');
+      path.setAttribute('data-parent', n.id);
+      path.setAttribute('data-child', child.id);
+      edgeGroup.appendChild(path);
+
+      // Edge label (Y/N)
+      const label = document.createElementNS(NS,'text');
+      label.setAttribute('x', mx - 6);
+      label.setAttribute('y', my);
+      label.setAttribute('fill','#3d4460');
+      label.setAttribute('font-size','10');
+      label.setAttribute('font-family','DM Sans');
+      label.textContent = idx === 0 ? '✓' : '✗';
+      edgeGroup.appendChild(label);
+    });
+  });
+  svg.appendChild(edgeGroup);
+
+  // ── Nodes ──────────────────────────────────────────────────
+  const nodeGroup = document.createElementNS(NS,'g');
+  nodeGroup.setAttribute('id','nodes');
+  NODES.forEach(n => {
+    const fo = document.createElementNS(NS,'foreignObject');
+    fo.setAttribute('x', n.x);
+    fo.setAttribute('y', n.y);
+    fo.setAttribute('width',  NODE_W);
+    fo.setAttribute('height', NODE_H + (showPi2 ? 30 : 0));
+    fo.setAttribute('overflow','visible');
+
+    const div = document.createElementNS(FO_NS,'div');
+    div.setAttribute('xmlns','http://www.w3.org/1999/xhtml');
+    div.innerHTML = buildNodeHTML(n);
+    div.querySelector('.node-card').onclick = () => openPanel(n);
+    fo.appendChild(div);
+    nodeGroup.appendChild(fo);
+  });
+  svg.appendChild(nodeGroup);
+
+  updateStats();
+  updateZoom();
+}
+
+function buildNodeHTML(n) {
+  const gc = giniColor(n.gini);
+  const pct = (n.gini / 0.7 * 100).toFixed(0);
+  const typeLabel = n.isLeaf ? 'LEAF' : 'SPLIT';
+  const typeClass = n.isLeaf ? 'leaf' : 'internal';
+  const giniClass = n.isLeaf ? 'leaf' :
+                    n.gini >= 0.5 ? 'gini-high' :
+                    n.gini >= 0.3 ? 'gini-mid' : 'gini-low';
+
+  let splitRow = '';
+  if (!n.isLeaf) {
+    splitRow = `<div class="split-label" title="${n.feature} ≤ ${n.threshold}">${n.feature} ≤ ${n.threshold}</div>`;
+  } else {
+    const dominant = n.pi2.reduce((a,b) => b.c>a.c?b:a);
+    const domName  = n.classNames[n.pi2.indexOf(dominant)];
+    splitRow = `<div class="split-label" title="Predicts: ${domName}">→ ${domName}</div>`;
+  }
+
+  let pi2Row = '';
+  if (showPi2) {
+    const pills = n.pi2.map((p,i) =>
+      `<span class="pi2-pill"><span class="pi2-dot" style="background:${classColor(i)}"></span>${p.pi2.toFixed(3)}</span>`
+    ).join('');
+    pi2Row = `<div class="pi2-row">${pills}</div>`;
+  }
+
+  let barRow = '';
+  if (showBar && !n.isLeaf) {
+    barRow = `<div class="gini-bar-wrap"><div class="gini-bar" style="width:${pct}%;background:${gc}"></div></div>`;
+  }
+
+  const height = NODE_H + (showPi2 ? 22 : 0);
+
+  return `
+    <div class="node-card ${giniClass}" style="--node-accent:${gc};height:${height}px" id="nc-${n.id}">
+      <div class="node-id">
+        <span>Node ${n.id}</span>
+        <span class="node-type ${typeClass}">${typeLabel}</span>
+      </div>
+      ${splitRow}
+      <div class="metrics">
+        <div class="metric">
+          <span class="metric-val" style="--metric-color:${gc}">${n.gini.toFixed(4)}</span>
+          <span class="metric-lbl">Gini</span>
+        </div>
+        <div class="metric">
+          <span class="metric-val">${n.total}</span>
+          <span class="metric-lbl">Samples</span>
+        </div>
+        <div class="metric">
+          <span class="metric-val" style="--metric-color:#8b9cf7">${n.sumPi2.toFixed(3)}</span>
+          <span class="metric-lbl">ΣPᵢ²</span>
+        </div>
+      </div>
+      ${barRow}
+      ${pi2Row}
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DETAIL PANEL
+// ═══════════════════════════════════════════════════════════════
+
+function openPanel(n) {
+  // Deselect previous
+  document.querySelectorAll('.node-card').forEach(c => c.classList.remove('selected'));
+  const nc = document.getElementById('nc-'+n.id);
+  if (nc) nc.classList.add('selected');
+  selectedId = n.id;
+
+  const giniVerify = +(1 - n.pi2.reduce((s,x)=>s+x.pi2,0)).toFixed(4);
+  const dominant   = n.pi2.reduce((a,b) => b.c>a.c?b:a);
+  const domIdx     = n.pi2.indexOf(dominant);
+
+  const piRows = n.pi2.map((p,i) => `
+    <tr>
+      <td style="color:${classColor(i)};font-size:11px">● ${n.classNames[i]}</td>
+      <td>${p.c}</td>
+      <td>${(p.p*100).toFixed(1)}%</td>
+      <td style="color:#8b9cf7">${p.pi2.toFixed(4)}</td>
+    </tr>`).join('');
+
+  const classBars = n.pi2.map((p,i) => `
+    <div class="class-bar-row">
+      <span style="font-size:11px;min-width:70px;color:${classColor(i)}">${n.classNames[i]}</span>
+      <div class="class-bar-bg"><div class="class-bar-fill" style="width:${(p.p*100).toFixed(1)}%;background:${classColor(i)}"></div></div>
+      <span style="font-size:11px;min-width:36px;text-align:right;color:var(--muted)">${(p.p*100).toFixed(1)}%</span>
+    </div>`).join('');
+
+  const splitInfo = n.isLeaf
+    ? `<div class="panel-row"><span class="panel-key">Predicted class</span><span class="panel-val" style="color:${classColor(domIdx)}">${n.classNames[domIdx]}</span></div>`
+    : `<div class="panel-row"><span class="panel-key">Split feature</span><span class="panel-val">${n.feature}</span></div>
+       <div class="panel-row"><span class="panel-key">Threshold</span><span class="panel-val">${n.threshold}</span></div>
+       <div class="panel-row"><span class="panel-key">Left child</span><span class="panel-val">${n.left}</span></div>
+       <div class="panel-row"><span class="panel-key">Right child</span><span class="panel-val">${n.right}</span></div>`;
+
+  document.getElementById('panel-content').innerHTML = `
+    <div style="margin-bottom:20px">
+      <div style="font-size:22px;font-weight:700;font-family:'JetBrains Mono'">Node ${n.id}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:2px">${n.isLeaf ? 'Leaf node' : 'Internal split node'} · depth ${n.depth}</div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Split info</h3>
+      ${splitInfo}
+      <div class="panel-row"><span class="panel-key">Samples</span><span class="panel-val">${n.total}</span></div>
+      <div class="panel-row"><span class="panel-key">Gini index</span><span class="panel-val" style="color:${giniColor(n.gini)}">${n.gini.toFixed(4)}</span></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Gini formula</h3>
+      <div class="formula-box">
+        Gini = 1 − Σ Pᵢ²<br>
+        Gini = 1 − ${n.sumPi2.toFixed(4)}<br>
+        <span style="color:#22c55e">Gini = ${giniVerify.toFixed(4)}</span>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>Class distribution</h3>
+      ${classBars}
+    </div>
+
+    <div class="panel-section">
+      <h3>Per-class Pᵢ² table</h3>
+      <table class="pi2-table">
+        <tr style="font-size:10px;color:var(--muted)">
+          <td>Class</td><td>Count</td><td>Prop.</td><td>Pᵢ²</td>
+        </tr>
+        ${piRows}
+        <tr style="color:var(--accent2)">
+          <td style="font-size:11px">Total ΣPᵢ²</td><td></td><td></td>
+          <td style="font-family:'JetBrains Mono';font-weight:600">${n.sumPi2.toFixed(4)}</td>
+        </tr>
+      </table>
+    </div>
+  `;
+
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('canvas-wrap').style.marginRight = '340px';
+}
+
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('canvas-wrap').style.marginRight = '0';
+  document.querySelectorAll('.node-card').forEach(c => c.classList.remove('selected'));
+  selectedId = null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TOOLBAR HANDLERS
+// ═══════════════════════════════════════════════════════════════
+
+function togglePill(el, mode) {
+  el.classList.toggle('active');
+  if (mode === 'pi2') showPi2 = el.classList.contains('active');
+  if (mode === 'bar') showBar = el.classList.contains('active');
+  render(CURRENT_DATA);
+}
+
+function applyZoom(val) {
+  currentZoom = +val;
+  document.getElementById('zoom-range').value = val;
+  document.getElementById('zoom-val').textContent = val + '%';
+  document.getElementById('tree-svg').style.transform = `scale(${val/100})`;
+  document.getElementById('tree-svg').style.transformOrigin = 'top left';
+}
+
+function updateStats() {
+  const nodes  = NODES;
+  const leaves = nodes.filter(n => n.isLeaf).length;
+  const depth  = Math.max(...nodes.map(n => n.depth));
+  document.getElementById('s-nodes').textContent   = nodes.length;
+  document.getElementById('s-depth').textContent   = depth;
+  document.getElementById('s-leaves').textContent  = leaves;
+  document.getElementById('s-samples').textContent = nodes[0].total;
+}
+
+function updateZoom() {
+  const svg   = document.getElementById('tree-svg');
+  const wrap  = document.getElementById('canvas-wrap');
+  const svgW  = +svg.getAttribute('width');
+  const svgH  = +svg.getAttribute('height');
+  wrap.style.minHeight = (svgH * currentZoom/100 + 80) + 'px';
+  wrap.style.minWidth  = (svgW * currentZoom/100 + 40) + 'px';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CODE PANEL
+// ═══════════════════════════════════════════════════════════════
+
+const CODE = `
+<span class="cm"># ── Step 1: Train your tree as usual ─────────────────────────</span>
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+<span class="kw">import</span> json
+
+clf = DecisionTreeClassifier(criterion=<span class="str">'gini'</span>, random_state=<span class="num">42</span>)
+clf.fit(x_train, y_train)
+
+<span class="cm"># ── Step 2: Extract tree data ─────────────────────────────────</span>
+<span class="kw">def</span> <span class="fn">extract_tree_data</span>(clf, feature_names=<span class="kw">None</span>, class_names=<span class="kw">None</span>):
+    t = clf.tree_
+    <span class="kw">return</span> {
+        <span class="str">"n_nodes"</span>:        t.node_count,
+        <span class="str">"feature_names"</span>:  <span class="var">list</span>(feature_names) <span class="kw">if</span> feature_names <span class="kw">else</span> <span class="kw">None</span>,
+        <span class="str">"class_names"</span>:   <span class="var">list</span>(class_names)   <span class="kw">if</span> class_names   <span class="kw">else</span> <span class="kw">None</span>,
+        <span class="str">"feature"</span>:        t.feature.tolist(),
+        <span class="str">"threshold"</span>:      t.threshold.tolist(),
+        <span class="str">"impurity"</span>:       t.impurity.tolist(),
+        <span class="str">"n_node_samples"</span>: t.n_node_samples.tolist(),
+        <span class="str">"value"</span>:          t.value.tolist(),
+        <span class="str">"children_left"</span>:  t.children_left.tolist(),
+        <span class="str">"children_right"</span>: t.children_right.tolist(),
+    }
+
+<span class="cm"># ── Step 3: Serialise to JSON ─────────────────────────────────</span>
+tree_data = extract_tree_data(
+    clf,
+    feature_names=x_train.columns,
+    class_names=enc.classes_
+)
+<span class="var">print</span>(json.dumps(tree_data))
+
+<span class="cm"># ── Step 4: Paste JSON into loadFromJSON() in this page ───────</span>
+<span class="cm">#   In the browser console, run:
+#   loadFromJSON(tree_data_json_string)
+#   Or replace DEMO_DATA at the top of the script block.</span>
+`.trim();
+
+function toggleCode() {
+  const panel = document.getElementById('code-panel');
+  panel.classList.toggle('open');
+  document.getElementById('code-block').innerHTML = CODE;
+}
+
+function copyCode() {
+  const raw = document.getElementById('code-block').innerText;
+  navigator.clipboard.writeText(raw).then(() => toast('Code copied!'));
+}
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PUBLIC API — call from console or your integration
+// ═══════════════════════════════════════════════════════════════
+
+let CURRENT_DATA = DEMO_DATA;
+
+/** Load from a JSON string (paste output of extract_tree_data) */
+window.loadFromJSON = function(jsonString) {
+  try {
+    CURRENT_DATA = typeof jsonString === 'string' ? JSON.parse(jsonString) : jsonString;
+    render(CURRENT_DATA);
+    toast('Tree loaded successfully!');
+  } catch(e) {
+    toast('JSON parse error: ' + e.message);
+  }
+};
+
+// ── Boot ───────────────────────────────────────────────────────
+render(DEMO_DATA);
+</script>
+</body>
+</html>
+`.trim()
